@@ -466,6 +466,7 @@ extern struct menu_item_ex
         system_menu;
 static const struct root_items items[] = {
     [GO_TO_FILEBROWSER] =   { browser, (void*)GO_TO_FILEBROWSER, &file_menu},
+    [GO_TO_PICTUREFLOW] =   { miscscrn, (void*)GO_TO_PICTUREFLOW, NULL},
 #ifdef HAVE_TAGCACHE
     [GO_TO_DBBROWSER] =     { browser, (void*)GO_TO_DBBROWSER, &tagcache_menu },
 #endif
@@ -507,6 +508,8 @@ MENUITEM_RETURNVALUE(db_browser, ID2P(LANG_TAGCACHE), GO_TO_DBBROWSER,
 #endif
 MENUITEM_RETURNVALUE(rocks_browser, ID2P(LANG_PLUGINS), GO_TO_BROWSEPLUGINS,
                         NULL, Icon_Plugin);
+MENUITEM_RETURNVALUE(load_pictureflow, ID2P(LANG_PICTUREFLOW), GO_TO_PICTUREFLOW,
+                        NULL, Icon_Plugin);
 
 static char *get_wps_item_name(int selected_item, void * data,
                                char *buffer, size_t buffer_len)
@@ -543,6 +546,7 @@ static struct menu_callback_with_desc root_menu_desc = {
 static struct menu_table menu_table[] = {
     /* Order here represents the default ordering */
     { "bookmarks", &bookmarks },
+    { "load_pictureflow", &load_pictureflow },
     { "files", &file_browser },
 #ifdef HAVE_TAGCACHE
     { "database", &db_browser },
@@ -836,6 +840,47 @@ static int load_plugin_screen(char *key)
     return ret_val;
 }
 
+static int load_pictureflow_screen(void)
+{
+    int ret_val = PLUGIN_ERROR;
+    int loops = 100;
+    int old_previous = last_screen;
+    int old_global = global_status.last_screen;
+    last_screen = next_screen;
+    global_status.last_screen = (char)next_screen;
+
+    while(loops-- > 0) /* just to keep things from getting out of hand */
+    {
+
+        int ret = plugin_load(PLUGIN_DEMOS_DIR"/pictureflow.rock", NULL);
+        if (ret == PLUGIN_USB_CONNECTED || ret == PLUGIN_ERROR)
+            ret_val = GO_TO_ROOT;
+        else if (ret == PLUGIN_GOTO_WPS)
+            ret_val = GO_TO_WPS;
+        else if (ret == PLUGIN_GOTO_PLUGIN)
+        {
+
+            continue;
+        }
+        else
+        {
+            if (ret == PLUGIN_GOTO_ROOT)
+                ret_val = GO_TO_ROOT;
+            else
+                ret_val = GO_TO_PREVIOUS;
+            /* Prevents infinite loop with WPS, Plugins, Previous Screen*/
+            if (ret == PLUGIN_OK && old_global == GO_TO_WPS && !audio_status())
+                ret_val = GO_TO_ROOT;
+            last_screen = (old_previous == next_screen || old_global == GO_TO_ROOT)
+                ? GO_TO_ROOT : old_previous;
+            if (last_screen == GO_TO_ROOT)
+                global_status.last_screen = GO_TO_ROOT;
+        }
+        break;
+    } /*while */
+    return ret_val;
+}
+
 static void ignore_back_button_stub(bool ignore)
 {
 #if (CONFIG_PLATFORM&PLATFORM_ANDROID)
@@ -1074,6 +1119,51 @@ void root_menu(void)
                 }
                 previous_browser = (next_screen != GO_TO_WPS) ? browser_default() :
                                                                 GO_TO_PLUGIN;
+                break;
+            }
+            case GO_TO_PICTUREFLOW:
+            {   
+
+                if (global_status.last_screen == GO_TO_SHORTCUTMENU)
+                {
+                    struct open_plugin_entry_t *op_entry = open_plugin_get_entry();
+                    if (op_entry->lang_id == LANG_OPEN_PLUGIN)
+                        op_entry->lang_id = LANG_SHORTCUTS;
+                    shortcut_origin = last_screen;
+                }
+
+
+                push_activity_without_refresh(ACTIVITY_UNKNOWN); /* prevent plugin_load */
+                next_screen = load_pictureflow_screen();           /* from flashing root  */
+                pop_current_activity_without_refresh();          /* menu activity       */
+
+                if (next_screen == GO_TO_PREVIOUS)
+                {
+                    /* shortcuts may take several trips through the GO_TO_PLUGIN
+                       case make sure we preserve and restore the origin */
+                    if(tree_get_context()->out_of_tree > 0) /* a shortcut has been selected */
+                    {
+                        next_screen = GO_TO_FILEBROWSER;
+                        shortcut_origin = GO_TO_ROOT;
+                        /* note in some cases there is a screen to return to
+                        but the history is rewritten as if you browsed here
+                        from the root so return there when finished */
+                    }
+                    else if (shortcut_origin != GO_TO_ROOT)
+                    {
+                        if (shortcut_origin != GO_TO_WPS)
+                            next_screen = shortcut_origin;
+                        shortcut_origin = GO_TO_ROOT;
+                    }
+                    /* skip GO_TO_PREVIOUS */
+                    if (last_screen == GO_TO_BROWSEPLUGINS)
+                    {
+                        next_screen = last_screen;
+                        last_screen = GO_TO_PICTUREFLOW;
+                    }
+                }
+                previous_browser = (next_screen != GO_TO_WPS) ? browser_default() :
+                                                                GO_TO_PICTUREFLOW;
                 break;
             }
             default:

@@ -378,6 +378,20 @@
   </voice>
 </phrase>
 <phrase>
+  id: LANG_PICTUREFLOW
+  desc: in the main menu
+  user: core
+  <source>
+    *: "PictureFlow"
+  </source>
+  <dest>
+    *: "PictureFlow"
+  </dest>
+  <voice>
+    *: "PictureFlow"
+  </voice>
+</phrase>
+<phrase>
   id: LANG_DIR_BROWSER
   desc: main menu title
   user: core
